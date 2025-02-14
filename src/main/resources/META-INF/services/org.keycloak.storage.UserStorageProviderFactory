@@ -1,0 +1,2 @@
+com.iess.keycloak.file.PropertyFileUserStorageProviderFactory
+com.iess.keycloak.ws.PropertyWsUserStorageProviderFactory

@@ -1,5 +1,7 @@
 com\iess\keycloak\file\PropertyFileUserStorageProvider.class
+com\iess\keycloak\utilities\Hash256.class
 com\iess\keycloak\ws\PropertyWsUserStorageProvider$1.class
+com\iess\keycloak\entities\User.class
 com\iess\keycloak\ws\PropertyWsUserStorageProvider.class
 com\iess\keycloak\file\PropertyFileUserStorageProvider$1.class
 com\iess\keycloak\file\PropertyFileUserStorageProviderFactory.class

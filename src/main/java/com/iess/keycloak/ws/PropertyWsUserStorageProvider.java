@@ -2,7 +2,9 @@ package com.iess.keycloak.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.iess.keycloak.entities.User;
+import com.iess.keycloak.utilities.Hash256;
 
 import jakarta.ws.rs.core.MultivaluedMap;
 
@@ -20,8 +22,10 @@ import org.keycloak.storage.user.UserQueryProvider;
 import org.keycloak.storage.user.UserRegistrationProvider;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -122,22 +126,40 @@ public class PropertyWsUserStorageProvider implements
 
     @Override
     public boolean isValid(RealmModel realm, UserModel user, CredentialInput input) {
-    	String API_URL = model.getConfig().getFirst("apiUrl");
-    	if (!supportsCredentialType(input.getType()) || !(input instanceof UserCredentialModel)) return false;
-    	UserCredentialModel cred = (UserCredentialModel)input;
-    	
-    	try {
-            String urlString = API_URL + "/" + user.getUsername() + "/"+ cred.getValue();
-            System.out.println("cadena de password: "+urlString);
-            URL url = new URL(urlString);
+        String API_URL = model.getConfig().getFirst("apiUrl");
+        if (!supportsCredentialType(input.getType()) || !(input instanceof UserCredentialModel)) return false;
+        UserCredentialModel cred = (UserCredentialModel) input;
+
+        try {
+            // Crear el objeto JSON con los datos a enviar
+            ObjectMapper mapper = new ObjectMapper();
+            ObjectNode jsonPayload = mapper.createObjectNode();
+            jsonPayload.put("username", user.getUsername());
+            jsonPayload.put("password", hashPassword(cred.getValue()) );
+
+            // Convertir el JSON a un String
+            String jsonString = mapper.writeValueAsString(jsonPayload);
+
+            // Crear la conexión HTTP
+            URL url = new URL(API_URL+ "/verify");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
 
+            // Escribir el cuerpo del mensaje en la solicitud
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] inputBytes = jsonString.getBytes("utf-8");
+                os.write(inputBytes, 0, inputBytes.length);
+            }
+
+            // Verificar la respuesta
             if (conn.getResponseCode() == 200) {
-                ObjectMapper mapper = new ObjectMapper();
                 JsonNode responseJson = mapper.readTree(conn.getInputStream());
+                System.out.println(responseJson.asBoolean());
 
+                // Si la respuesta es true, consideramos la autenticación exitosa
                 if (responseJson.asBoolean() == true) {
                     return true;
                 }
@@ -145,8 +167,10 @@ public class PropertyWsUserStorageProvider implements
         } catch (IOException e) {
             e.printStackTrace();
         }
-		return false;
+
+        return false;
     }
+
 
     @Override
     public void close() {
@@ -219,7 +243,7 @@ public class PropertyWsUserStorageProvider implements
 	}
 	
 	public boolean updateCredential(RealmModel realm, UserModel user, CredentialInput input) {
-		String API_URL = model.getConfig().getFirst("apiUrl");
+	    String API_URL = model.getConfig().getFirst("apiUrl");
 	    if (!supportsCredentialType(input.getType())) {
 	        throw new RuntimeException("Tipo de credencial no soportado");
 	    }
@@ -227,31 +251,47 @@ public class PropertyWsUserStorageProvider implements
 	    if (input instanceof UserCredentialModel) {
 	        UserCredentialModel credential = (UserCredentialModel) input;
 	        String newPassword = credential.getValue();
-
+	        
 	        try {
-	            String urlString = API_URL + "/" + user.getUsername() + "/" + newPassword;
-	            System.out.println("cadena de change_password: " + urlString);
-	            URL url = new URL(urlString);
+	            // Crear el objeto JSON con los datos de la credencial a enviar
+	            ObjectMapper mapper = new ObjectMapper();
+	            ObjectNode jsonPayload = mapper.createObjectNode();
+	            jsonPayload.put("username", user.getUsername());
+	            jsonPayload.put("password", hashPassword(newPassword)); // Nuevo password que queremos establecer
+
+	            // Convertir el JSON a un String
+	            String jsonString = mapper.writeValueAsString(jsonPayload);
+
+	            // Crear la conexión HTTP
+	            URL url = new URL(API_URL+"/change-password");
 	            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 	            conn.setRequestMethod("PUT");
 	            conn.setRequestProperty("Accept", "application/json");
+	            conn.setRequestProperty("Content-Type", "application/json");
+	            conn.setDoOutput(true);
 
-	            // Check the response code
+	            // Escribir el JSON en el cuerpo de la solicitud
+	            try (OutputStream os = conn.getOutputStream()) {
+	                byte[] inputBytes = jsonString.getBytes("utf-8");
+	                os.write(inputBytes, 0, inputBytes.length);
+	            }
+
+	            // Verificar la respuesta del servidor
 	            int responseCode = conn.getResponseCode();
 
-	            if (responseCode >= 200 && responseCode < 300) { // Successful response (2xx)
+	            if (responseCode >= 200 && responseCode < 300) { // Respuesta exitosa (2xx)
 	                return true;
 	            } else {
-	                System.err.println("Error updating credential. Response Code: " + responseCode);
-	                return false; // Indicate failure
+	                System.err.println("Error actualizando la credencial. Código de respuesta: " + responseCode);
+	                return false; // Indicar fallo
 	            }
 
 	        } catch (IOException e) {
-	            e.printStackTrace(); // Print the exception details for debugging
-	            return false; // Indicate failure
+	            e.printStackTrace(); // Mostrar los detalles de la excepción para depuración
+	            return false; // Indicar fallo
 	        }
 	    }
-	    return false; // Handle cases where input is not UserCredentialModel
+	    return false; // Manejar casos donde el input no es un UserCredentialModel
 	}
 
 	@Override
@@ -288,6 +328,18 @@ public class PropertyWsUserStorageProvider implements
 	public boolean removeUser(RealmModel realm, UserModel user) {
 		// TODO Auto-generated method stub
 		return false;
+	}
+	
+	public String hashPassword(String password) {
+		String hashPassword="";
+        Hash256 encriptacion = new Hash256();
+        try {
+			hashPassword= encriptacion.hashPasswordWithSHA256(password);
+		} catch (NoSuchAlgorithmException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        return hashPassword;
 	}
 	
 }

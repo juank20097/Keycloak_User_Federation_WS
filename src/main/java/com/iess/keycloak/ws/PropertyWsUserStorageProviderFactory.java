@@ -42,7 +42,7 @@ public class PropertyWsUserStorageProviderFactory implements UserStorageProvider
                 .property().name("apiUrl")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .label("API URL")
-                .defaultValue("http://192.168.12.202:8080/user")
+                .defaultValue("http://192.168.12.202:8080/login")
                 .helpText("URL del servicio REST que devuelve los usuarios")
                 .add().build();
     }
